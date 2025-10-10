@@ -92,7 +92,7 @@ impl PairService {
         let receiver = self.mdns.browse(SERVICE_TYPE_CONNECT)?;
 
         let start_time = std::time::Instant::now();
-        let timeout = std::time::Duration::from_secs(5);
+        let timeout = std::time::Duration::from_secs(15);
 
         let debugging_port = loop {
             if start_time.elapsed() > timeout {
