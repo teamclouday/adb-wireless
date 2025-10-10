@@ -71,7 +71,11 @@ impl PairService {
                         let port = info.get_port();
 
                         let _ = self.mdns.stop_browse(SERVICE_TYPE_PAIRING);
-                        if let Some(addr) = client_addresses.iter().next() {
+                        if let Some(addr) = client_addresses
+                            .iter()
+                            .filter(|addr| addr.is_private())
+                            .next()
+                        {
                             break (**addr, port);
                         } else {
                             return Err(CliError::MdnsError(mdns_sd::Error::Msg(
@@ -106,11 +110,9 @@ impl PairService {
                 Ok(ServiceEvent::ServiceResolved(info)) => {
                     let port = info.get_port();
 
-                    if let Some(addr) = info.get_addresses_v4().iter().next() {
-                        if **addr == address {
-                            let _ = self.mdns.stop_browse(SERVICE_TYPE_CONNECT);
-                            break port;
-                        }
+                    if info.get_addresses_v4().iter().any(|&&addr| addr == address) {
+                        let _ = self.mdns.stop_browse(SERVICE_TYPE_CONNECT);
+                        break port;
                     } else {
                         std::thread::sleep(std::time::Duration::from_millis(100))
                     }
