@@ -33,6 +33,11 @@ impl PairService {
         let service_name = format!("adb-wireless-{}", random_number_string(6));
         let password = random_number_string(8);
 
+        crate::debug_println(&format!(
+            "Created PairService: service_name={}, password={}",
+            service_name, password
+        ));
+
         Ok(Self {
             service_name,
             password,
@@ -45,6 +50,10 @@ impl PairService {
     }
 
     pub fn start_discovery(&self) -> Result<(), CliError> {
+        crate::debug_println(&format!(
+            "Registering mDNS service: {} type: {}",
+            self.service_name, SERVICE_TYPE_PAIRING
+        ));
         let service_info = ServiceInfo::new(
             SERVICE_TYPE_PAIRING,
             &self.service_name,
@@ -60,6 +69,10 @@ impl PairService {
     }
 
     pub fn wait_for_pairing(&self) -> Result<DeviceInfo, CliError> {
+        crate::debug_println(&format!(
+            "Browsing for mDNS service: {}",
+            SERVICE_TYPE_PAIRING
+        ));
         // first browse for pairing service
         let receiver = self.mdns.browse(SERVICE_TYPE_PAIRING)?;
 
@@ -71,11 +84,7 @@ impl PairService {
                         let port = info.get_port();
 
                         let _ = self.mdns.stop_browse(SERVICE_TYPE_PAIRING);
-                        if let Some(addr) = client_addresses
-                            .iter()
-                            .filter(|addr| addr.is_private())
-                            .next()
-                        {
+                        if let Some(addr) = client_addresses.iter().find(|addr| addr.is_private()) {
                             break (**addr, port);
                         } else {
                             return Err(CliError::MdnsError(mdns_sd::Error::Msg(
@@ -91,6 +100,11 @@ impl PairService {
                 }
             }
         };
+
+        crate::debug_println(&format!(
+            "Pairing service resolved at {}:{}. Now browsing for connect service: {}",
+            address, pairing_port, SERVICE_TYPE_CONNECT
+        ));
 
         // then browse for connect service
         let receiver = self.mdns.browse(SERVICE_TYPE_CONNECT)?;
@@ -112,6 +126,7 @@ impl PairService {
 
                     if info.get_addresses_v4().iter().any(|&&addr| addr == address) {
                         let _ = self.mdns.stop_browse(SERVICE_TYPE_CONNECT);
+                        crate::debug_println(&format!("Connect service resolved at port {}", port));
                         break port;
                     } else {
                         std::thread::sleep(std::time::Duration::from_millis(100))

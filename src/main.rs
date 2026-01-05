@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::sync::OnceLock;
 
 mod utility;
 use utility::{
@@ -15,6 +16,9 @@ use utility::{
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+
+    #[arg(short, long, help = "Show debug information", global = true)]
+    debug: bool,
 }
 
 #[derive(Subcommand)]
@@ -34,18 +38,35 @@ enum Commands {
 
 fn main() {
     let cli = Cli::parse();
+    if cli.debug {
+        let _ = DEBUG_FLAG.set(true);
+    }
 
     if let Err(err) = run_cli(cli) {
-        eprintln!("{}", err);
+        eprintln!("Error: {}", err);
         std::process::exit(1);
     }
 }
 
+static DEBUG_FLAG: OnceLock<bool> = OnceLock::new();
+
+pub fn is_debug() -> bool {
+    *DEBUG_FLAG.get().unwrap_or(&false)
+}
+
+pub fn debug_println(msg: &str) {
+    if is_debug() {
+        println!("[DEBUG] {}", msg);
+    }
+}
+
 fn run_cli(cli: Cli) -> Result<(), CliError> {
+    debug_println("Starting ADB wireless tool");
     adb_ensure_running()?;
 
     match cli.command {
         Commands::Reverse { ports } => {
+            debug_println("Listing connected devices");
             let devices = adb_list_devices()?;
 
             if devices.is_empty() {
@@ -66,6 +87,10 @@ fn run_cli(cli: Cli) -> Result<(), CliError> {
             // Handle reverse port mapping
             for port in ports {
                 let mapping = PortMapping::new(&port)?;
+                debug_println(&format!(
+                    "Reversing port {} to {} on device {}",
+                    mapping.device_port, mapping.host_port, selected_device
+                ));
                 adb_reverse_port(&selected_device, &mapping)?;
                 println!(
                     "Reversed port {}:{}",
@@ -74,17 +99,20 @@ fn run_cli(cli: Cli) -> Result<(), CliError> {
             }
         }
         Commands::Pair => {
+            debug_println("Starting pairing service");
             let service = PairService::new()?;
             service.start_discovery()?;
 
             qr2term::print_qr(service.qrtext())?;
             println!("QR code generated. Scan it with your device to pair.");
 
+            debug_println("Waiting for device to pair...");
             let device = service.wait_for_pairing()?;
-            println!(
-                "Device found at {}:{}",
-                device.address, device.debugging_port
-            );
+            println!("Device found, pairing...");
+            debug_println(&format!(
+                "Device found: address={}, pairing_port={}, debugging_port={}",
+                device.address, device.pairing_port, device.debugging_port
+            ));
             adb_connect_device(&device, &service.password)?;
 
             println!("Device connected");
