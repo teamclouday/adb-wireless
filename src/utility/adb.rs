@@ -1,6 +1,7 @@
 use super::{error::CliError, pair::DeviceInfo, port::PortMapping};
 
 pub fn adb_ensure_running() -> Result<(), CliError> {
+    crate::debug_println("Checking if ADB is installed");
     // Check if ADB exists
     match std::process::Command::new("adb").arg("version").output() {
         Ok(output) => {
@@ -11,17 +12,17 @@ pub fn adb_ensure_running() -> Result<(), CliError> {
         Err(_) => return Err(CliError::AdbNotFound),
     }
 
+    crate::debug_println("Starting ADB server");
     // Start ADB server
     let mut cmd = std::process::Command::new("adb");
     cmd.arg("start-server");
 
-    let mut child = cmd.spawn().map_err(|err| CliError::AdbServerError(err))?;
+    let mut child = cmd.spawn().map_err(CliError::AdbServerError)?;
 
     match child.wait() {
         Ok(status) => {
             if !status.success() {
-                return Err(CliError::AdbServerError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                return Err(CliError::AdbServerError(std::io::Error::other(
                     "Failed to start ADB server.".to_string(),
                 )));
             }
@@ -33,19 +34,17 @@ pub fn adb_ensure_running() -> Result<(), CliError> {
 }
 
 pub fn adb_list_devices() -> Result<Vec<String>, CliError> {
+    crate::debug_println("Running 'adb devices'");
     let output = std::process::Command::new("adb")
         .arg("devices")
         .output()
-        .map_err(|err| CliError::AdbServerError(err))?;
+        .map_err(CliError::AdbServerError)?;
 
     if !output.status.success() {
-        return Err(CliError::AdbServerError(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!(
-                "Failed to list devices. {}",
-                String::from_utf8_lossy(&output.stderr)
-            ),
-        )));
+        return Err(CliError::AdbServerError(std::io::Error::other(format!(
+            "Failed to list devices. {}",
+            String::from_utf8_lossy(&output.stderr)
+        ))));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -66,6 +65,10 @@ pub fn adb_list_devices() -> Result<Vec<String>, CliError> {
 }
 
 pub fn adb_reverse_port(device_name: &str, mapping: &PortMapping) -> Result<(), CliError> {
+    crate::debug_println(&format!(
+        "Running 'adb -s {} reverse tcp:{} tcp:{}'",
+        device_name, mapping.device_port, mapping.host_port
+    ));
     match std::process::Command::new("adb")
         .arg("-s")
         .arg(device_name)
@@ -76,15 +79,12 @@ pub fn adb_reverse_port(device_name: &str, mapping: &PortMapping) -> Result<(), 
     {
         Ok(output) => {
             if !output.status.success() {
-                return Err(CliError::AdbServerError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!(
-                        "Failed to reverse port {}:{}. {}",
-                        mapping.device_port,
-                        mapping.host_port,
-                        String::from_utf8_lossy(&output.stderr)
-                    ),
-                )));
+                return Err(CliError::AdbServerError(std::io::Error::other(format!(
+                    "Failed to reverse port {}:{}. {}",
+                    mapping.device_port,
+                    mapping.host_port,
+                    String::from_utf8_lossy(&output.stderr)
+                ))));
             }
         }
         Err(err) => return Err(CliError::AdbServerError(err)),
@@ -94,6 +94,10 @@ pub fn adb_reverse_port(device_name: &str, mapping: &PortMapping) -> Result<(), 
 }
 
 pub fn adb_connect_device(device: &DeviceInfo, password: &str) -> Result<(), CliError> {
+    crate::debug_println(&format!(
+        "Running 'adb pair {}:{} {}'",
+        device.address, device.pairing_port, password
+    ));
     match std::process::Command::new("adb")
         .arg("pair")
         .arg(format!("{}:{}", device.address, device.pairing_port))
@@ -102,36 +106,34 @@ pub fn adb_connect_device(device: &DeviceInfo, password: &str) -> Result<(), Cli
     {
         Ok(output) => {
             if !output.status.success() {
-                return Err(CliError::AdbServerError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!(
-                        "Failed to pair with device at {}:{}. {}",
-                        device.address,
-                        device.pairing_port,
-                        String::from_utf8_lossy(&output.stderr)
-                    ),
-                )));
+                return Err(CliError::AdbServerError(std::io::Error::other(format!(
+                    "Failed to pair with device at {}:{}. {}",
+                    device.address,
+                    device.pairing_port,
+                    String::from_utf8_lossy(&output.stderr)
+                ))));
             }
         }
         Err(err) => return Err(CliError::AdbServerError(err)),
     }
 
+    crate::debug_println(&format!(
+        "Running 'adb connect {}:{}'",
+        device.address, device.debugging_port
+    ));
     let mut cmd = std::process::Command::new("adb");
     cmd.arg("connect")
         .arg(format!("{}:{}", device.address, device.debugging_port));
 
-    let mut child = cmd.spawn().map_err(|err| CliError::AdbServerError(err))?;
+    let mut child = cmd.spawn().map_err(CliError::AdbServerError)?;
 
     match child.wait() {
         Ok(status) => {
             if !status.success() {
-                return Err(CliError::AdbServerError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!(
-                        "Failed to connect to device at {}:{}",
-                        device.address, device.debugging_port,
-                    ),
-                )));
+                return Err(CliError::AdbServerError(std::io::Error::other(format!(
+                    "Failed to connect to device at {}:{}",
+                    device.address, device.debugging_port,
+                ))));
             }
         }
         Err(err) => return Err(CliError::AdbServerError(err)),
